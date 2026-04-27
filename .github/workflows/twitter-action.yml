@@ -1,0 +1,90 @@
+name: Twitter Auto Bot (Video to Release)
+
+on:
+  workflow_dispatch: 
+    inputs:
+      twitter_cookies:
+        description: '🍪 Paste Twitter/X Cookies Here (Raw JSON)'
+        required: true
+      image_prefix:
+        description: 'Image Prefix (e.g., 1, 2, LiveMatch)'
+        required: true
+        default: '1'
+      titles:
+        description: 'Titles/Messages (separated by ,,)'
+        required: true
+        default: "RCB vs GT live match HD mein dekhne ke liye bio link check karein!,,Don't miss the Kohli vs Gill battle today! Watch live stream link in my bio.,,IPL 2026 Live: RCB vs GT ad-free streaming available now.,,Chinnaswamy mein runs ki barish! Catch every ball live."
+      hashtags:
+        description: 'Hashtags (separated by ,,)'
+        required: true
+        default: "#RCBvGT #ViratKohli #IPL2026 ,, #IPL #LiveCricket ,, #T20Cricket #LiveMatch"
+
+permissions:
+  contents: write
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Code download kar raha hai...
+        uses: actions/checkout@v4
+
+      - name: Python setup kar raha hai...
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12' 
+
+      - name: System Dependencies (Xvfb & FFmpeg) install kar raha hai...
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg
+          pip install DrissionPage requests
+
+      - name: Run Script & Record Video 🎥
+        env:
+          TWITTER_COOKIES: ${{ inputs.twitter_cookies }} 
+          IMAGE_PREFIX: ${{ inputs.image_prefix }} 
+          PYTHONUNBUFFERED: 1  
+          TITLES: ${{ inputs.titles }}             
+          HASHTAGS: ${{ inputs.hashtags }}         
+        run: |
+          # 1. Virtual screen setup
+          Xvfb :99 -screen 0 1920x1080x24 &
+          export DISPLAY=:99
+          
+          # 2. FFmpeg recording start
+          ffmpeg -y -video_size 1920x1080 -framerate 30 -f x11grab -i :99.0 -c:v libx264 -preset ultrafast -pix_fmt yuv420p output_video.mp4 > /dev/null 2>&1 &
+          
+          echo $! > ffmpeg.pid
+          
+          # 3. Apna DrissionPage wala code run karein
+          python -u main.py
+
+      - name: Safely Finalize Video Recording 🛑
+        if: always() 
+        run: |
+          if [ -f "ffmpeg.pid" ]; then
+            echo "🛑 Script ruk gayi hai. FFmpeg ko safely band kar rahe hain taake video corrupt na ho..."
+            kill -INT $(cat ffmpeg.pid)
+            sleep 3 
+          else
+            echo "⚠️ Recording shuru hi nahi hui thi."
+          fi
+
+      - name: Upload Video to GitHub Releases
+        if: always() 
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        run: |
+          TAG_NAME="Twitter-Post-$(date +'%Y%m%d-%H%M%S')"
+          echo "Uploading output_video.mp4 to GitHub Releases..."
+          
+          if [ -f "output_video.mp4" ]; then
+            gh release create "$TAG_NAME" output_video.mp4 \
+              --title "Twitter Post Upload Evidence: $TAG_NAME" \
+              --notes "Automated run ka video evidence."
+            echo "✅ Video successfully Releases mein save ho gayi!"
+          else
+            echo "❌ Video file nahi mili."
+          fi
